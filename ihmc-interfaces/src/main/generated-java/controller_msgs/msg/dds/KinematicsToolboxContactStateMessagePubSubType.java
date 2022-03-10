@@ -47,6 +47,9 @@ public class KinematicsToolboxContactStateMessagePubSubType implements us.ihmc.p
       current_alignment += 4 + us.ihmc.idl.CDR.alignment(current_alignment, 4);for(int i0 = 0; i0 < 20; ++i0)
       {
           current_alignment += geometry_msgs.msg.dds.PointPubSubType.getMaxCdrSerializedSize(current_alignment);}
+      current_alignment += 4 + us.ihmc.idl.CDR.alignment(current_alignment, 4);for(int i0 = 0; i0 < 20; ++i0)
+      {
+          current_alignment += geometry_msgs.msg.dds.Vector3PubSubType.getMaxCdrSerializedSize(current_alignment);}
       current_alignment += 4 + us.ihmc.idl.CDR.alignment(current_alignment, 4);current_alignment += (20 * 4) + us.ihmc.idl.CDR.alignment(current_alignment, 4);
 
 
@@ -74,6 +77,11 @@ public class KinematicsToolboxContactStateMessagePubSubType implements us.ihmc.p
           current_alignment += geometry_msgs.msg.dds.PointPubSubType.getCdrSerializedSize(data.getContactPointsInBodyFrame().get(i0), current_alignment);}
 
       current_alignment += 4 + us.ihmc.idl.CDR.alignment(current_alignment, 4);
+      for(int i0 = 0; i0 < data.getContactNormalsInBodyFrame().size(); ++i0)
+      {
+          current_alignment += geometry_msgs.msg.dds.Vector3PubSubType.getCdrSerializedSize(data.getContactNormalsInBodyFrame().get(i0), current_alignment);}
+
+      current_alignment += 4 + us.ihmc.idl.CDR.alignment(current_alignment, 4);
       current_alignment += (data.getContactingBodyIds().size() * 4) + us.ihmc.idl.CDR.alignment(current_alignment, 4);
 
 
@@ -91,6 +99,10 @@ public class KinematicsToolboxContactStateMessagePubSubType implements us.ihmc.p
       cdr.write_type_e(data.getContactPointsInBodyFrame());else
           throw new RuntimeException("contact_points_in_body_frame field exceeds the maximum length");
 
+      if(data.getContactNormalsInBodyFrame().size() <= 20)
+      cdr.write_type_e(data.getContactNormalsInBodyFrame());else
+          throw new RuntimeException("contact_normals_in_body_frame field exceeds the maximum length");
+
       if(data.getContactingBodyIds().size() <= 20)
       cdr.write_type_e(data.getContactingBodyIds());else
           throw new RuntimeException("contacting_body_ids field exceeds the maximum length");
@@ -104,6 +116,7 @@ public class KinematicsToolboxContactStateMessagePubSubType implements us.ihmc.p
       data.setCenterOfMassMargin(cdr.read_type_6());
       	
       cdr.read_type_e(data.getContactPointsInBodyFrame());	
+      cdr.read_type_e(data.getContactNormalsInBodyFrame());	
       cdr.read_type_e(data.getContactingBodyIds());	
 
    }
@@ -114,6 +127,7 @@ public class KinematicsToolboxContactStateMessagePubSubType implements us.ihmc.p
       ser.write_type_4("sequence_id", data.getSequenceId());
       ser.write_type_6("center_of_mass_margin", data.getCenterOfMassMargin());
       ser.write_type_e("contact_points_in_body_frame", data.getContactPointsInBodyFrame());
+      ser.write_type_e("contact_normals_in_body_frame", data.getContactNormalsInBodyFrame());
       ser.write_type_e("contacting_body_ids", data.getContactingBodyIds());
    }
 
@@ -123,6 +137,7 @@ public class KinematicsToolboxContactStateMessagePubSubType implements us.ihmc.p
       data.setSequenceId(ser.read_type_4("sequence_id"));
       data.setCenterOfMassMargin(ser.read_type_6("center_of_mass_margin"));
       ser.read_type_e("contact_points_in_body_frame", data.getContactPointsInBodyFrame());
+      ser.read_type_e("contact_normals_in_body_frame", data.getContactNormalsInBodyFrame());
       ser.read_type_e("contacting_body_ids", data.getContactingBodyIds());
    }
 

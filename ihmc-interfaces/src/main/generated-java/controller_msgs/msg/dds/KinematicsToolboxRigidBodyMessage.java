@@ -31,7 +31,7 @@ public class KinematicsToolboxRigidBodyMessage extends Packet<KinematicsToolboxR
    public us.ihmc.euclid.tuple3D.Point3D desired_position_in_world_;
    /**
             * This is the desired orientation of the control frame.
-            * I the control frame has not been defined, it represents the desired orientation of endEffector.getBodyFixedFrame().
+            * If the control frame has not been defined, it represents the desired orientation of endEffector.getBodyFixedFrame().
             * The data is assumed to be expressed in world frame.
             */
    public us.ihmc.euclid.tuple4D.Quaternion desired_orientation_in_world_;
@@ -159,7 +159,7 @@ public class KinematicsToolboxRigidBodyMessage extends Packet<KinematicsToolboxR
 
    /**
             * This is the desired orientation of the control frame.
-            * I the control frame has not been defined, it represents the desired orientation of endEffector.getBodyFixedFrame().
+            * If the control frame has not been defined, it represents the desired orientation of endEffector.getBodyFixedFrame().
             * The data is assumed to be expressed in world frame.
             */
    public us.ihmc.euclid.tuple4D.Quaternion getDesiredOrientationInWorld()

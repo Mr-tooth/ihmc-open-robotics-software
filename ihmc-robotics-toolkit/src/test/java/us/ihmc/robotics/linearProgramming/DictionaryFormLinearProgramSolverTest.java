@@ -1,6 +1,5 @@
 package us.ihmc.robotics.linearProgramming;
 
-import gnu.trove.list.array.TDoubleArrayList;
 import org.ejml.data.DMatrixRMaj;
 import org.junit.jupiter.api.Test;
 
@@ -17,7 +16,7 @@ public class DictionaryFormLinearProgramSolverTest
                                                             6.0, 0.0, -3.0, -1.0});
       dictionary.reshape(4, 4);
 
-      solver.doSimplexPhaseII(dictionary);
+      solver.performSimplexPhase(dictionary, DictionaryFormLinearProgramSolver.Phase.PHASE_II);
       solver.printSolution();
    }
 
@@ -32,7 +31,7 @@ public class DictionaryFormLinearProgramSolverTest
                                                             0.0, 5.0, -3.0, 2.0});
       dictionary.reshape(4, 4);
 
-      solver.doSimplexPhaseII(dictionary);
+      solver.performSimplexPhase(dictionary, DictionaryFormLinearProgramSolver.Phase.PHASE_II);
       solver.printSolution();
    }
 
@@ -47,7 +46,7 @@ public class DictionaryFormLinearProgramSolverTest
                                                             6.0, -1.0, -2.0});
       dictionary.reshape(4, 3);
 
-      solver.doSimplexPhaseII(dictionary);
+      solver.performSimplexPhase(dictionary, DictionaryFormLinearProgramSolver.Phase.PHASE_II);
       solver.printSolution();
    }
 
@@ -72,7 +71,7 @@ public class DictionaryFormLinearProgramSolverTest
          dictionary.set(i + 1, 2, -Math.sin(theta));
       }
 
-      solver.doSimplexPhaseII(dictionary);
+      solver.performSimplexPhase(dictionary, DictionaryFormLinearProgramSolver.Phase.PHASE_II);
       solver.printSolution();
    }
 }

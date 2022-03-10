@@ -4,8 +4,13 @@ import gnu.trove.list.array.TDoubleArrayList;
 import gnu.trove.list.array.TIntArrayList;
 import org.apache.commons.math3.util.Precision;
 import org.ejml.data.DMatrixRMaj;
+import org.ejml.data.MatrixType;
 import us.ihmc.commons.time.Stopwatch;
 import us.ihmc.log.LogTools;
+import us.ihmc.matrixlib.MatrixTools;
+import us.ihmc.robotics.linearAlgebra.careSolvers.MatrixToolsLocal;
+
+import java.util.Arrays;
 
 /**
  * Solves a dictionary form LP using the criss-cross or simplex methods.
@@ -15,90 +20,68 @@ public class DictionaryFormLinearProgramSolver
 {
    private static final boolean debug = false;
    private static final int maxVariables = 100;
-   private static final int maxIterations = 100;
+   private static final int maxIterations = 1000;
    private static final int nullIndex = -1;
    private static final double epsilon = 1e-6;
 
-   private DMatrixRMaj dictionary = new DMatrixRMaj(0);
-   private DMatrixRMaj tempDictionary = new DMatrixRMaj(0);
+   private DMatrixRMaj dictionary = new DMatrixRMaj(maxVariables + 1, maxVariables + 1);
+   private DMatrixRMaj tempDictionary = new DMatrixRMaj(maxVariables + 1, maxVariables + 1);
 
    private final TIntArrayList basisIndices = new TIntArrayList(maxVariables);
    private final TIntArrayList nonBasisIndices = new TIntArrayList(maxVariables);
-   private int iterations;
-   private SolverStatus status;
    private final TDoubleArrayList solution = new TDoubleArrayList(maxVariables);
 
-   private final Stopwatch timer = new Stopwatch();
-   private double solveTimeSeconds;
 
-   public enum SolverStatus
+   private final Stopwatch timer = new Stopwatch();
+   private final SolverStatistics phase1Statistics = new SolverStatistics();
+   private final SolverStatistics phase2Statistics = new SolverStatistics();
+
+   enum Phase { PHASE_I, PHASE_II}
+
+   class SolverStatistics
    {
-      OPTIMAL,
-      INCONSISTENT,
-      DUAL_INCONSISTENT,
-      UNKNOWN,
-      UNBOUNDED,
-      MAX_ITERATIONS
+      double solveTime;
+      int iterations;
+      boolean foundSolution;
+
+      void clear()
+      {
+         solveTime = Double.NaN;
+         iterations = 0;
+         foundSolution = false;
+      }
    }
 
-   public void solveCrissCross(DMatrixRMaj startingDictionary)
+   public void solveSimplex(DMatrixRMaj startingDictionary)
    {
-      dictionary.set(startingDictionary);
-      tempDictionary.set(startingDictionary);
-
-      setupIndexLists(startingDictionary);
-
-      iterations = 0;
-      status = SolverStatus.UNKNOWN;
-      timer.reset();
-
-      while (true)
+      if (startingDictionary.getNumCols() > maxVariables)
       {
-         if (maxIterations > 0 && iterations++ > maxIterations)
-         {
-            status = SolverStatus.MAX_ITERATIONS;
-            break;
-         }
-
-         int candidateBasisPivot = findFirstNegativeColumnEntry(0);
-         int candidateNonBasisPivot = findFirstPositiveRowEntry(0);
-
-         int basisPivot, nonBasisPivot;
-         if (candidateBasisPivot == nullIndex && candidateNonBasisPivot == nullIndex)
-         {
-            status = SolverStatus.OPTIMAL;
-            break;
-         }
-         else if (candidateBasisPivot != nullIndex && (candidateNonBasisPivot == nullIndex || candidateBasisPivot < candidateNonBasisPivot))
-         {
-            basisPivot = candidateBasisPivot;
-            nonBasisPivot = findFirstPositiveRowEntry(basisPivot);
-
-            if (nonBasisPivot == nullIndex)
-            {
-               status = SolverStatus.INCONSISTENT;
-               break;
-            }
-         }
-         else
-         {
-            nonBasisPivot = candidateNonBasisPivot;
-            basisPivot = findFirstNegativeColumnEntry(nonBasisPivot);
-
-            if (basisPivot == nullIndex)
-            {
-               status = SolverStatus.DUAL_INCONSISTENT;
-               break;
-            }
-         }
-
-         //         System.out.println(dictionary);
-         //         System.out.println("Pivoting on (" + basisPivot + "," + nonBasisPivot + ")\n");
-         performPivot(basisPivot, nonBasisPivot);
+         throw new IllegalArgumentException("Simplex method has a maximum of " + maxVariables + " decision variables, " + startingDictionary.getNumCols() + " provided.");
       }
 
-      solveTimeSeconds = timer.totalElapsed();
-      packSolution();
+      phase1Statistics.clear();
+      phase2Statistics.clear();
+
+      /* Phase I: solve augmented LP */
+
+      // setup augmented dictionary
+      dictionary.reshape(startingDictionary.getNumRows(), 1 + startingDictionary.getNumCols());
+      Arrays.fill(dictionary.getData(), 0.0);
+
+      int auxiliaryColumn = dictionary.getNumCols() - 1;
+      dictionary.set(0, auxiliaryColumn, -1.0);
+      for (int i = 1; i < dictionary.getNumRows(); i++)
+      {
+         dictionary.set(i, auxiliaryColumn, 1.0);
+      }
+
+      MatrixTools.setMatrixBlock(dictionary, 0, 0, startingDictionary, 1, 0, startingDictionary.getNumRows() - 1, startingDictionary.getNumCols(), 1.0);
+
+      // perform pivot to make primal feasible
+
+
+      /* Phase II: optimize feasible dictionary */
+      performSimplexPhase(dictionary, Phase.PHASE_II);
    }
 
    private void setupIndexLists(DMatrixRMaj dictionary)
@@ -111,83 +94,34 @@ public class DictionaryFormLinearProgramSolver
          nonBasisIndices.add(i);
       }
 
-      basisIndices.add(0);
+      basisIndices.add(-1);
       for (int i = 1; i < dictionary.getNumRows(); i++)
       {
          basisIndices.add((i - 1) + nonBasisIndices.size());
       }
    }
 
-   private int findFirstNegativeColumnEntry(int column)
-   {
-      for (int i = 1; i < dictionary.getNumRows(); i++)
-      {
-         double d_ig = dictionary.get(i, column);
-         if (d_ig < -epsilon)
-         {
-            return i;
-         }
-      }
-
-      return nullIndex;
-   }
-
-   private int findFirstPositiveRowEntry(int row)
-   {
-      for (int j = 1; j < dictionary.getNumCols(); j++)
-      {
-         double d_fj = dictionary.get(row, j);
-         if (d_fj > epsilon)
-         {
-            return j;
-         }
-      }
-
-      return nullIndex;
-   }
-
-   public void solveSimplex(DMatrixRMaj startingDictionary)
-   {
-      if (startingDictionary.getNumCols() > maxVariables)
-      {
-         throw new IllegalArgumentException("Simplex method has a maximum of " + maxVariables + " decision variables, " + startingDictionary.getNumCols() + " provided.");
-      }
-
-      timer.reset();
-
-      /* Phase I: solve augmented LP */
-      iterations = 0;
-      status = SolverStatus.UNKNOWN;
-      int auxiliaryIndex = startingDictionary.getNumCols() + startingDictionary.getNumRows() - 1;
-
-      /* Phase II: optimize feasible dictionary */
-      boolean success = doSimplexPhaseII(dictionary);
-
-      solveTimeSeconds = timer.totalElapsed();
-   }
-
    /* package private for testing */
-   boolean doSimplexPhaseII(DMatrixRMaj startingDictionary)
+   void performSimplexPhase(DMatrixRMaj startingDictionary, Phase phase)
    {
-      iterations = 0;
-      status = SolverStatus.UNKNOWN;
-      timer.reset();
+      SolverStatistics statistics = phase == Phase.PHASE_I ? phase1Statistics : phase2Statistics;
 
+      timer.reset();
       dictionary.set(startingDictionary);
       tempDictionary.set(startingDictionary);
       setupIndexLists(startingDictionary);
 
       while (true)
       {
-         if (maxIterations > 0 && iterations++ > maxIterations)
+         if (maxIterations > 0 && statistics.iterations++ > maxIterations)
          {
-            status = SolverStatus.MAX_ITERATIONS;
-            return false;
+            statistics.foundSolution = false;
+            break;
          }
 
          if (isSimplexOptimal())
          {
-            status = SolverStatus.OPTIMAL;
+            statistics.foundSolution = true;
             break;
          }
 
@@ -196,8 +130,8 @@ public class DictionaryFormLinearProgramSolver
          int r = computeSimplexPivotRow(s);
          if (r == nullIndex)
          {
-            status = SolverStatus.UNBOUNDED;
-            return false;
+            statistics.foundSolution = false;
+            break;
          }
 
          if (debug)
@@ -211,8 +145,7 @@ public class DictionaryFormLinearProgramSolver
       }
 
       packSolution();
-      solveTimeSeconds = timer.totalElapsed();
-      return true;
+      statistics.solveTime = timer.lapElapsed();
    }
 
    private void packSolution()
@@ -372,29 +305,9 @@ public class DictionaryFormLinearProgramSolver
       tempDictionary = previousDictionary;
    }
 
-   public SolverStatus getStatus()
-   {
-      return status;
-   }
-
-   public boolean foundSolution()
-   {
-      return status == SolverStatus.OPTIMAL;
-   }
-
    public TDoubleArrayList getSolution()
    {
       return solution;
-   }
-
-   public int getIterations()
-   {
-      return iterations;
-   }
-
-   public double getSolveTimeSeconds()
-   {
-      return solveTimeSeconds;
    }
 
    public void printSolution()
@@ -434,4 +347,101 @@ public class DictionaryFormLinearProgramSolver
          System.out.println(x[j]);
       }
    }
+
+   /////////////////////////////////////////////////////////////////////////////////////
+   ///////////////////////// CRISS CROSS METHOD, IN PROGRESS ///////////////////////////
+   /////////////////////////////////////////////////////////////////////////////////////
+
+   //   public void solveCrissCross(DMatrixRMaj startingDictionary)
+   //   {
+   //      dictionary.set(startingDictionary);
+   //      tempDictionary.set(startingDictionary);
+   //
+   //      setupIndexLists(startingDictionary);
+   //
+   //      iterations = 0;
+   //      status = SolverStatus.UNKNOWN;
+   //      timer.reset();
+   //
+   //      while (true)
+   //      {
+   //         if (maxIterations > 0 && iterations++ > maxIterations)
+   //         {
+   //            status = SolverStatus.MAX_ITERATIONS;
+   //            break;
+   //         }
+   //
+   //         int candidateBasisPivot = findFirstNegativeColumnEntry(0);
+   //         int candidateNonBasisPivot = findFirstPositiveRowEntry(0);
+   //
+   //         int basisPivot, nonBasisPivot;
+   //         if (candidateBasisPivot == nullIndex && candidateNonBasisPivot == nullIndex)
+   //         {
+   //            status = SolverStatus.OPTIMAL;
+   //            break;
+   //         }
+   //         else if (candidateBasisPivot != nullIndex && (candidateNonBasisPivot == nullIndex || candidateBasisPivot < candidateNonBasisPivot))
+   //         {
+   //            basisPivot = candidateBasisPivot;
+   //            nonBasisPivot = findFirstPositiveRowEntry(basisPivot);
+   //
+   //            if (nonBasisPivot == nullIndex)
+   //            {
+   //               status = SolverStatus.INCONSISTENT;
+   //               break;
+   //            }
+   //         }
+   //         else
+   //         {
+   //            nonBasisPivot = candidateNonBasisPivot;
+   //            basisPivot = findFirstNegativeColumnEntry(nonBasisPivot);
+   //
+   //            if (basisPivot == nullIndex)
+   //            {
+   //               status = SolverStatus.DUAL_INCONSISTENT;
+   //               break;
+   //            }
+   //         }
+   //
+   //         if (debug)
+   //         {
+   //            System.out.println(dictionary);
+   //            System.out.println("Pivoting on (" + basisPivot + "," + nonBasisPivot + ")\n");
+   //         }
+   //
+   //         performPivot(basisPivot, nonBasisPivot);
+   //      }
+   //
+   //      solveTimeSeconds1 = timer.totalElapsed();
+   //      packSolution();
+   //   }
+
+//   private int findFirstNegativeColumnEntry(int column)
+//   {
+//      for (int i = 1; i < dictionary.getNumRows(); i++)
+//      {
+//         double d_ig = dictionary.get(i, column);
+//         if (d_ig < -epsilon)
+//         {
+//            return i;
+//         }
+//      }
+//
+//      return nullIndex;
+//   }
+//
+//   private int findFirstPositiveRowEntry(int row)
+//   {
+//      for (int j = 1; j < dictionary.getNumCols(); j++)
+//      {
+//         double d_fj = dictionary.get(row, j);
+//         if (d_fj > epsilon)
+//         {
+//            return j;
+//         }
+//      }
+//
+//      return nullIndex;
+//   }
+
 }

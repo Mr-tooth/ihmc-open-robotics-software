@@ -10,9 +10,13 @@
 uint32 sequence_id
 
 # Specifies the minimum distance to keep the center of mass away from the support polygon's edges.
+# If this value is negative it is ignored.
 float64 center_of_mass_margin -1
-# The list of active contact points to use evaluate the support polygon.
+# The list of active contact points which is used to evaluate the support polygon.
 # Each contact point is expected to be expressed in body frame.
 geometry_msgs/Point[<=20] contact_points_in_body_frame
+# (Optional) The list of contact surface normals which can be used to compute a generalized support region.
+# If not provided each surface normal is assumed to be vertical. A surface normal vector should point away from the contacting surface.
+geometry_msgs/Vector3[<=20] contact_normals_in_body_frame
 # The id used to retrieve the contacting body for each contact point.
 int32[<=20] contacting_body_ids

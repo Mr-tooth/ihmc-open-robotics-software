@@ -16,7 +16,7 @@ int32 end_effector_hash_code
 geometry_msgs/Point desired_position_in_world
 
 # This is the desired orientation of the control frame.
-# I the control frame has not been defined, it represents the desired orientation of endEffector.getBodyFixedFrame().
+# If the control frame has not been defined, it represents the desired orientation of endEffector.getBodyFixedFrame().
 # The data is assumed to be expressed in world frame.
 geometry_msgs/Quaternion desired_orientation_in_world
 

@@ -425,7 +425,7 @@ public class PointFeedbackController implements FeedbackControllerInterface
       if (!isEnabled())
          return;
 
-      computeFeedbackForce();
+      computeVirtualModelControlFeedbackForce();
 
       if (isRootBody)
       {
@@ -441,7 +441,7 @@ public class PointFeedbackController implements FeedbackControllerInterface
       }
    }
 
-   private void computeFeedbackForce()
+   private void computeVirtualModelControlFeedbackForce()
    {
       ReferenceFrame trajectoryFrame = yoDesiredPosition.getReferenceFrame();
 

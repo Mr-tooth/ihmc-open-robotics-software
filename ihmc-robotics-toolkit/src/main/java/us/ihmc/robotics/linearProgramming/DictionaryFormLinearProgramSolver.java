@@ -28,11 +28,6 @@ public class DictionaryFormLinearProgramSolver
    private final SolverStatistics phase2Statistics = new SolverStatistics();
    private final SolverStatistics crissCrossStatistics = new SolverStatistics();
 
-   enum SolverMethod
-   {
-      SIMPLEX, CRISS_CROSS
-   }
-
    private enum SimplexPhase
    {
       PHASE_I, PHASE_II;

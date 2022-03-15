@@ -43,11 +43,11 @@ public class LinearProgramDictionary
     *
     * @return whether to perform Simplex Phase I on the given dictionary.
     */
-   public boolean initialize(DMatrixRMaj startingDictionary, DictionaryFormLinearProgramSolver.SolverMethod solverMethod)
+   public boolean initialize(DMatrixRMaj startingDictionary, SolverMethod solverMethod)
    {
       this.startingDictionary = startingDictionary;
 
-      if (solverMethod == DictionaryFormLinearProgramSolver.SolverMethod.SIMPLEX)
+      if (solverMethod == SolverMethod.SIMPLEX)
       {
          setupIndexLists(startingDictionary);
          if (populateNegativeBasisIndices(startingDictionary) > 0)

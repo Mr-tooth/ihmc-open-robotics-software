@@ -222,7 +222,6 @@ public class DictionaryFormLinearProgramSolverTest
       }
    }
 
-
    @Test
    public void testAgainstApacheSolver_MinimumBoundingEllipses()
    {

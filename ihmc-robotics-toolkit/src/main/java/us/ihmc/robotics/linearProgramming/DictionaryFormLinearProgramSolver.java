@@ -5,10 +5,6 @@ import gnu.trove.list.array.TIntArrayList;
 import org.apache.commons.math3.util.Precision;
 import org.ejml.data.DMatrixRMaj;
 import us.ihmc.commons.time.Stopwatch;
-import us.ihmc.euclid.tools.EuclidCoreIOTools;
-import us.ihmc.matrixlib.MatrixTools;
-
-import java.util.Arrays;
 
 /**
  * Solves a dictionary form LP using the criss-cross or simplex methods.
@@ -16,59 +12,34 @@ import java.util.Arrays;
  */
 public class DictionaryFormLinearProgramSolver
 {
-   private static final boolean debug = false;
+   static final boolean debug = false;
 
-   private static final int maxVariables = 200;
-   private static final int maxIterations = 1000;
-   private static final int nullMatrixIndex = -1;
-   private static final int rhsVariableLexicalIndex = 0;
-   private static final int objectiveLexicalIndex = -1;
-   private static final int auxObjectiveLexicalIndex = -2;
-   private static final double epsilon = 1e-6;
-   private static final double zeroCutoff = 1e-10;
+   static final int maxVariables = 200;
+   static final int maxIterations = 1000;
+   static final int nullMatrixIndex = -1;
+   static final double epsilon = 1e-6;
+   static final double zeroCutoff = 1e-10;
 
-   private DMatrixRMaj dictionary = new DMatrixRMaj(maxVariables + 1, maxVariables + 1);
-   private DMatrixRMaj tempDictionary = new DMatrixRMaj(maxVariables + 1, maxVariables + 1);
-
-   private final TIntArrayList basisIndices = new TIntArrayList(maxVariables);
-   private final TIntArrayList nonBasisIndices = new TIntArrayList(maxVariables);
+   private final LinearProgramDictionary dictionary = new LinearProgramDictionary();
    private final TDoubleArrayList solution = new TDoubleArrayList(maxVariables);
-
-   private final TIntArrayList auxiliaryIndices = new TIntArrayList(maxVariables);
-   private final TIntArrayList initialNegativeBasisIndices = new TIntArrayList(maxVariables);
 
    private final Stopwatch timer = new Stopwatch();
    private final SolverStatistics phase1Statistics = new SolverStatistics();
    private final SolverStatistics phase2Statistics = new SolverStatistics();
    private final SolverStatistics crissCrossStatistics = new SolverStatistics();
 
-   enum SimplexPhase
+   enum SolverMethod
+   {
+      SIMPLEX, CRISS_CROSS
+   }
+
+   private enum SimplexPhase
    {
       PHASE_I, PHASE_II;
 
       int objectiveSize()
       {
          return this == PHASE_I ? 2 : 1;
-      }
-   }
-
-   class SolverStatistics
-   {
-      double solveTime;
-      int iterations;
-      boolean foundSolution;
-
-      void clear()
-      {
-         solveTime = Double.NaN;
-         iterations = 0;
-         foundSolution = false;
-      }
-
-      @Override
-      public String toString()
-      {
-         return "Solve time: " + solveTime + "\nIterations: " + iterations + "\nFound solution: " + foundSolution + "\n";
       }
    }
 
@@ -85,99 +56,19 @@ public class DictionaryFormLinearProgramSolver
 
       phase1Statistics.clear();
       phase2Statistics.clear();
-      setupIndexLists(startingDictionary);
 
-      if (populateNegativeBasisIndices(startingDictionary) > 0)
+      if (dictionary.initialize(startingDictionary, SolverMethod.SIMPLEX))
       {
-         /* Phase I: solve augmented LP to make a feasible dictionary */
-
-         int auxiliaryVariables = initialNegativeBasisIndices.size();
-         dictionary.reshape(startingDictionary.getNumRows() + 1, startingDictionary.getNumCols() + auxiliaryVariables);
-         tempDictionary.reshape(startingDictionary.getNumRows() + 1, startingDictionary.getNumCols() + auxiliaryVariables);
-
-         Arrays.fill(dictionary.getData(), 0.0);
-         MatrixTools.setMatrixBlock(dictionary, 1, 0, startingDictionary, 0, 0, startingDictionary.getNumRows(), startingDictionary.getNumCols(), 1.0);
-
-         basisIndices.insert(0, auxObjectiveLexicalIndex);
-         auxiliaryIndices.reset();
-         int maximumNonAuxiliaryLexicalIndex = basisIndices.get(basisIndices.size() - 1);
-         for (int i = 0; i < initialNegativeBasisIndices.size(); i++)
-         {
-            int auxiliaryLexicalIndex = maximumNonAuxiliaryLexicalIndex + i + 1;
-            auxiliaryIndices.add(auxiliaryLexicalIndex);
-            nonBasisIndices.add(auxiliaryLexicalIndex);
-            dictionary.set(0, startingDictionary.getNumCols() + i, -1.0);
-            dictionary.set(initialNegativeBasisIndices.get(i) + 1, startingDictionary.getNumCols() + i, 1.0);
-         }
-
-         if (debug)
-         {
-            printDictionary("Phase I initial auxiliary dictionary");
-         }
-
-         // Pivot out negative b entries to make feasible
-         for (int i = 0; i < initialNegativeBasisIndices.size(); i++)
-         {
-            performPivot(initialNegativeBasisIndices.get(i) + 1, startingDictionary.getNumCols() + i);
-         }
-
-         if (debug)
-         {
-            System.out.println();
-            printDictionary("Phase I feasible auxiliary dictionary");
-         }
-
-         // solve auxiliary problem
+         /* Phase I: compute feasible dictionary */
          performSimplexPhase(SimplexPhase.PHASE_I);
 
-         if (!phase1Statistics.foundSolution || dictionary.get(0, 0) < -epsilon)
+         if (!phase1Statistics.foundSolution() || dictionary.getEntry(0, 0) < -epsilon)
          {
-            phase1Statistics.foundSolution = false;
+            phase1Statistics.setFoundSolution(false);
             return;
          }
 
-         // pivot out auxiliary indices if in basis
-         for (int i = 0; i < auxiliaryIndices.size(); i++)
-         {
-            if (basisIndices.contains(auxiliaryIndices.get(i)))
-            {
-               int pivotColumn = findLargestMagnitudeNonAuxiliaryObjectiveColumn();
-               int pivotRow = basisIndices.indexOf(auxiliaryIndices.get(i));
-               performPivot(pivotRow, pivotColumn);
-            }
-         }
-
-         tempDictionary.reshape(startingDictionary.getNumRows(), startingDictionary.getNumCols());
-         Arrays.fill(tempDictionary.getData(), 0.0);
-
-         // remove auxiliary variables from dictionary
-         int column = 0;
-         for (int i = 0; i < dictionary.getNumCols(); i++)
-         {
-            int index = nonBasisIndices.get(i);
-            if (!auxiliaryIndices.contains(index))
-            {
-               MatrixTools.setMatrixBlock(tempDictionary, 0, column, dictionary, 1, i, tempDictionary.getNumRows(), 1, 1.0);
-               column++;
-            }
-         }
-
-         dictionary.set(tempDictionary);
-
-         // remove auxiliary variables from index list
-         for (int i = nonBasisIndices.size() - 1; i >= 0; i--)
-         {
-            if (auxiliaryIndices.contains(nonBasisIndices.get(i)))
-            {
-               nonBasisIndices.removeAt(i);
-            }
-         }
-         basisIndices.remove(auxObjectiveLexicalIndex);
-      }
-      else
-      {
-         dictionary.set(startingDictionary);
-         tempDictionary.set(startingDictionary);
+         dictionary.dropPhaseIVariables();
       }
 
       /* Phase II: optimize feasible dictionary */
@@ -186,60 +77,24 @@ public class DictionaryFormLinearProgramSolver
       packSolution();
    }
 
-   int populateNegativeBasisIndices(DMatrixRMaj dictionary)
-   {
-      initialNegativeBasisIndices.reset();
-      for (int i = 1; i < dictionary.getNumRows(); i++)
-      {
-         if (dictionary.get(i, 0) < -zeroCutoff)
-         {
-            initialNegativeBasisIndices.add(i);
-         }
-      }
-
-      return initialNegativeBasisIndices.size();
-   }
-
-   void setupIndexLists(DMatrixRMaj dictionary)
-   {
-      basisIndices.reset();
-      nonBasisIndices.reset();
-
-      nonBasisIndices.add(rhsVariableLexicalIndex);
-      basisIndices.add(objectiveLexicalIndex);
-
-      int lexicalIndex = 1;
-
-      for (int i = 1; i < dictionary.getNumCols(); i++)
-      {
-         nonBasisIndices.add(lexicalIndex++);
-      }
-
-      for (int i = 1; i < dictionary.getNumRows(); i++)
-      {
-         basisIndices.add(lexicalIndex++);
-      }
-   }
-
    /* package private for testing */
    void performSimplexPhase(SimplexPhase phase)
    {
       SolverStatistics statistics = phase == SimplexPhase.PHASE_I ? phase1Statistics : phase2Statistics;
 
       timer.reset();
-      tempDictionary.set(dictionary);
 
       while (true)
       {
-         if (maxIterations > 0 && statistics.iterations++ > maxIterations)
+         if (maxIterations > 0 && statistics.getAndIncrementIterations() > maxIterations)
          {
-            statistics.foundSolution = false;
+            statistics.setFoundSolution(false);
             break;
          }
 
          if (isSimplexOptimal())
          {
-            statistics.foundSolution = true;
+            statistics.setFoundSolution(true);
             break;
          }
 
@@ -248,7 +103,7 @@ public class DictionaryFormLinearProgramSolver
 
          if (r == nullMatrixIndex)
          {
-            statistics.foundSolution = false;
+            statistics.setFoundSolution(false);
             break;
          }
 
@@ -257,75 +112,33 @@ public class DictionaryFormLinearProgramSolver
             System.out.println("Pivoting on (" + r + "," + s + ")\n");
          }
 
-         performPivot(r, s);
+         dictionary.performPivot(r, s);
       }
 
-      statistics.solveTime = timer.lapElapsed();
+      statistics.setSolveTime(timer.lapElapsed());
    }
 
-   private int computeInitialSimplexPhaseIPivotRow()
-   {
-      double minimumEntry = Double.MAX_VALUE;
-      int minimumEntryRow = nullMatrixIndex;
-
-      for (int i = SimplexPhase.PHASE_I.objectiveSize(); i < dictionary.getNumRows(); i++)
-      {
-         double entry = dictionary.get(i, 0);
-         if (entry < minimumEntry)
-         {
-            minimumEntry = entry;
-            minimumEntryRow = i;
-         }
-      }
-
-      return minimumEntryRow;
-   }
-
-   private int findLargestMagnitudeNonAuxiliaryObjectiveColumn()
-   {
-      double largestMagnitudeValue = 0.0;
-      int column = nullMatrixIndex;
-
-      for (int j = 1; j < dictionary.getNumCols(); j++)
-      {
-         int index = nonBasisIndices.get(j);
-         if (auxiliaryIndices.contains(index))
-         {
-            continue;
-         }
-
-         double value = Math.abs(dictionary.get(0, j));
-         if (value > largestMagnitudeValue)
-         {
-            largestMagnitudeValue = value;
-            column = j;
-         }
-      }
-
-      return column;
-   }
-
-   void packSolution()
+   private void packSolution()
    {
       solution.reset();
-      int capacity = basisIndices.size() + nonBasisIndices.size() - 2;
+      int capacity = dictionary.getBasisSize() + dictionary.getNonBasisSize() - 2;
       for (int i = 0; i < capacity; i++)
       {
          solution.add(0.0);
       }
 
-      for (int i = 1; i < basisIndices.size(); i++)
+      for (int i = 1; i < dictionary.getBasisSize(); i++)
       {
-         solution.set(basisIndices.get(i) - 1, dictionary.get(i, 0));
+         solution.set(dictionary.getBasisIndex(i) - 1, dictionary.getEntry(i, 0));
       }
    }
 
    /* Checks optimality assuming feasibility, so only the objective row needs to be checked */
    private boolean isSimplexOptimal()
    {
-      for (int j = 1; j < dictionary.getNumCols(); j++)
+      for (int j = 1; j < dictionary.getNumberOfColumns(); j++)
       {
-         if (dictionary.get(0, j) > epsilon)
+         if (dictionary.getEntry(0, j) > epsilon)
          {
             return false;
          }
@@ -340,15 +153,15 @@ public class DictionaryFormLinearProgramSolver
       int minimumEntryIndex = Integer.MAX_VALUE;
       int column = nullMatrixIndex;
 
-      for (int j = 1; j < dictionary.getNumCols(); j++)
+      for (int j = 1; j < dictionary.getNumberOfColumns(); j++)
       {
-         double entry = dictionary.get(0, j);
+         double entry = dictionary.getEntry(0, j);
          if (entry < epsilon)
          {
             continue;
          }
 
-         int index = nonBasisIndices.get(j);
+         int index = dictionary.getNonBasisIndex(j);
          if (index < minimumEntryIndex)
          {
             minimumEntryIndex = index;
@@ -366,10 +179,10 @@ public class DictionaryFormLinearProgramSolver
       double minRatio = Double.MAX_VALUE;
       minRatioIndices.reset();
 
-      for (int i = phase.objectiveSize(); i < dictionary.getNumRows(); i++)
+      for (int i = phase.objectiveSize(); i < dictionary.getNumberOfRows(); i++)
       {
-         double d_ig = dictionary.get(i, 0);
-         double d_is = dictionary.get(i, column);
+         double d_ig = dictionary.getEntry(i, 0);
+         double d_is = dictionary.getEntry(i, column);
 
          if (d_is > -epsilon)
          {
@@ -406,7 +219,7 @@ public class DictionaryFormLinearProgramSolver
 
          for (int i = 0; i < minRatioIndices.size(); i++)
          {
-            int variableIndex = basisIndices.get(minRatioIndices.get(i));
+            int variableIndex = dictionary.getBasisIndex(minRatioIndices.get(i));
             if (variableIndex < minRowIndex)
             {
                minRowIndex = variableIndex;
@@ -420,46 +233,6 @@ public class DictionaryFormLinearProgramSolver
       {
          return minRatioIndices.get(0);
       }
-   }
-
-   // r = basisPivot
-   // s = nonBasisPivot
-   private void performPivot(int r, int s)
-   {
-      /* Pivot is performed on temp dictionary */
-      for (int i = 0; i < dictionary.getNumRows(); i++)
-      {
-         for (int j = 0; j < dictionary.getNumCols(); j++)
-         {
-            if (i == r && j == s)
-            {
-               tempDictionary.set(i, j, 1.0 / dictionary.get(r, s));
-            }
-            else if (i == r)
-            {
-               tempDictionary.set(i, j, -dictionary.get(r, j) / (dictionary.get(r, s)));
-            }
-            else if (j == s)
-            {
-               tempDictionary.set(i, j, dictionary.get(i, s) / (dictionary.get(r, s)));
-            }
-            else
-            {
-               tempDictionary.set(i, j, dictionary.get(i, j) - dictionary.get(i, s) * dictionary.get(r, j) / (dictionary.get(r, s)));
-            }
-         }
-      }
-
-      /* Update index mapping */
-      int originalBasisIndex = basisIndices.get(r);
-      int originalNonBasisIndex = nonBasisIndices.get(s);
-      basisIndices.set(r, originalNonBasisIndex);
-      nonBasisIndices.set(s, originalBasisIndex);
-
-      /* Swap dictionaries to avoid calling .set() */
-      DMatrixRMaj previousDictionary = dictionary;
-      dictionary = tempDictionary;
-      tempDictionary = previousDictionary;
    }
 
    public TDoubleArrayList getSolution()
@@ -485,13 +258,11 @@ public class DictionaryFormLinearProgramSolver
       crissCrossStatistics.clear();
       timer.reset();
 
-      dictionary.set(startingDictionary);
-      tempDictionary.set(startingDictionary);
-      setupIndexLists(startingDictionary);
+      dictionary.initialize(startingDictionary, SolverMethod.CRISS_CROSS);
 
       while (true)
       {
-         if (maxIterations > 0 && crissCrossStatistics.iterations++ > maxIterations)
+         if (maxIterations > 0 && crissCrossStatistics.getAndIncrementIterations() > maxIterations)
          {
             break;
          }
@@ -502,11 +273,11 @@ public class DictionaryFormLinearProgramSolver
          int basisPivot, nonBasisPivot;
          if (candidateBasisPivot == nullMatrixIndex && candidateNonBasisPivot == nullMatrixIndex)
          {
-            crissCrossStatistics.foundSolution = true;
+            crissCrossStatistics.setFoundSolution(true);
             break;
          }
          else if (candidateBasisPivot != nullMatrixIndex && (candidateNonBasisPivot == nullMatrixIndex
-                                                             || basisIndices.get(candidateBasisPivot) < nonBasisIndices.get(candidateNonBasisPivot)))
+                                                             || dictionary.getBasisIndex(candidateBasisPivot) < dictionary.getNonBasisIndex(candidateNonBasisPivot)))
          {
             basisPivot = candidateBasisPivot;
             nonBasisPivot = findPositiveRowEntryWithBlandRule(basisPivot);
@@ -529,16 +300,10 @@ public class DictionaryFormLinearProgramSolver
             }
          }
 
-         if (debug)
-         {
-            System.out.println(dictionary);
-            System.out.println("Pivoting on (" + basisPivot + "," + nonBasisPivot + ")\n");
-         }
-
-         performPivot(basisPivot, nonBasisPivot);
+         dictionary.performPivot(basisPivot, nonBasisPivot);
       }
 
-      crissCrossStatistics.solveTime = timer.totalElapsed();
+      crissCrossStatistics.setSolveTime(timer.totalElapsed());
       packSolution();
    }
 
@@ -547,10 +312,10 @@ public class DictionaryFormLinearProgramSolver
       int minLexicalIndex = Integer.MAX_VALUE;
       int row = nullMatrixIndex;
 
-      for (int i = 1; i < dictionary.getNumRows(); i++)
+      for (int i = 1; i < dictionary.getNumberOfRows(); i++)
       {
-         double d_ig = dictionary.get(i, column);
-         int lexicalIndex = basisIndices.get(i);
+         double d_ig = dictionary.getEntry(i, column);
+         int lexicalIndex = dictionary.getBasisIndex(i);
 
          if (d_ig < -epsilon && lexicalIndex < minLexicalIndex)
          {
@@ -567,10 +332,10 @@ public class DictionaryFormLinearProgramSolver
       int minLexicalIndex = Integer.MAX_VALUE;
       int column = nullMatrixIndex;
 
-      for (int j = 1; j < dictionary.getNumCols(); j++)
+      for (int j = 1; j < dictionary.getNumberOfColumns(); j++)
       {
-         double d_fj = dictionary.get(row, j);
-         int lexicalIndex = nonBasisIndices.get(j);
+         double d_fj = dictionary.getEntry(row, j);
+         int lexicalIndex = dictionary.getNonBasisIndex(j);
 
          if (d_fj > epsilon && lexicalIndex < minLexicalIndex)
          {
@@ -595,67 +360,6 @@ public class DictionaryFormLinearProgramSolver
    public SolverStatistics getCrissCrossStatistics()
    {
       return crissCrossStatistics;
-   }
-
-   /* for testing */
-   DMatrixRMaj getDictionary()
-   {
-      return dictionary;
-   }
-
-   private static final String entryFormat = EuclidCoreIOTools.getStringFormat(6, 3);
-   private static final String entrySeparator = "\t\t";
-
-   void printDictionary(String label)
-   {
-      System.out.println(label);
-
-      for (int row = -1; row < dictionary.getNumRows(); row++)
-      {
-         for (int column = -1; column < dictionary.getNumCols(); column++)
-         {
-            String entry = "";
-            if (row == -1 && column == -1)
-            {
-
-            }
-            else if (row == -1)
-            {
-               entry = formatIndex(nonBasisIndices.get(column)) + "\t";
-            }
-            else if (column == -1)
-            {
-               entry = formatIndex(basisIndices.get(row));
-            }
-            else
-            {
-               entry = String.format(entryFormat, dictionary.get(row, column));
-            }
-
-            System.out.print(entry + entrySeparator);
-         }
-         System.out.println();
-      }
-   }
-
-   private static String formatIndex(int index)
-   {
-      if (index == rhsVariableLexicalIndex)
-      {
-         return "g";
-      }
-      else if (index == objectiveLexicalIndex)
-      {
-         return "f";
-      }
-      else if (index == auxObjectiveLexicalIndex)
-      {
-         return "f'";
-      }
-      else
-      {
-         return Integer.toString(index);
-      }
    }
 }
 

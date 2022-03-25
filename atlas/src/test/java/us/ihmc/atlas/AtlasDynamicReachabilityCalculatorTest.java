@@ -8,7 +8,6 @@ import us.ihmc.avatar.drcRobot.DRCRobotModel;
 import us.ihmc.avatar.drcRobot.RobotTarget;
 import us.ihmc.commonWalkingControlModules.configurations.DynamicReachabilityParameters;
 import us.ihmc.commonWalkingControlModules.configurations.WalkingControllerParameters;
-import us.ihmc.simulationconstructionset.util.simulationRunner.BlockingSimulationRunner.SimulationExceededMaximumTimeException;
 
 @Tag("humanoid-flat-ground")
 public class AtlasDynamicReachabilityCalculatorTest extends AvatarDynamicReachabilityCalculatorTest
@@ -17,46 +16,46 @@ public class AtlasDynamicReachabilityCalculatorTest extends AvatarDynamicReachab
    protected DRCRobotModel getRobotModel()
    {
       AtlasRobotModel atlasRobotModel = new AtlasRobotModel(AtlasRobotVersion.ATLAS_UNPLUGGED_V5_NO_HANDS, RobotTarget.SCS, false)
+      {
+         @Override
+         public WalkingControllerParameters getWalkingControllerParameters()
          {
-            @Override
-            public WalkingControllerParameters getWalkingControllerParameters()
+            return new AtlasWalkingControllerParameters(RobotTarget.SCS, getJointMap(), getContactPointParameters())
             {
-               return new AtlasWalkingControllerParameters(RobotTarget.SCS, getJointMap(), getContactPointParameters())
+               @Override
+               public boolean editStepTimingForReachability()
                {
-                  @Override
-                  public boolean editStepTimingForReachability()
-                  {
-                     return true;
-                  }
+                  return true;
+               }
 
-                  @Override
-                  public double nominalHeightAboveAnkle()
-                  {
-                     return 0.84; // height for straight leg steps
-                  }
+               @Override
+               public double nominalHeightAboveAnkle()
+               {
+                  return 0.84; // height for straight leg steps
+               }
 
-                  @Override
-                  public double maximumHeightAboveAnkle()
-                  {
-                     return 0.92; // height for straight leg steps
-                  }
+               @Override
+               public double maximumHeightAboveAnkle()
+               {
+                  return 0.92; // height for straight leg steps
+               }
 
-                  @Override
-                  public DynamicReachabilityParameters getDynamicReachabilityParameters()
+               @Override
+               public DynamicReachabilityParameters getDynamicReachabilityParameters()
+               {
+                  return new DynamicReachabilityParameters()
                   {
-                     return new DynamicReachabilityParameters()
+                     @Override
+                     public double getMaximumDesiredKneeBend()
                      {
-                        @Override
-                        public double getMaximumDesiredKneeBend()
-                        {
-                           return 0.4;
-                        }
-                     };
-                  }
-               };
-            }
+                        return 0.4;
+                     }
+                  };
+               }
+            };
+         }
 
-         };
+      };
 
       return atlasRobotModel;
    }
@@ -64,13 +63,6 @@ public class AtlasDynamicReachabilityCalculatorTest extends AvatarDynamicReachab
    public static void main(String[] args)
    {
       AtlasDynamicReachabilityCalculatorTest test = new AtlasDynamicReachabilityCalculatorTest();
-      try
-      {
-         test.testForwardWalkingMedium();
-      }
-      catch(SimulationExceededMaximumTimeException e)
-      {
-
-      }
+      test.testForwardWalkingMedium();
    }
 }

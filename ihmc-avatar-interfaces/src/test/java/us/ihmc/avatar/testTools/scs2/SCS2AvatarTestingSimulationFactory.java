@@ -11,7 +11,6 @@ import controller_msgs.msg.dds.WholeBodyTrajectoryMessage;
 import us.ihmc.avatar.drcRobot.DRCRobotModel;
 import us.ihmc.avatar.scs2.SCS2AvatarSimulation;
 import us.ihmc.avatar.scs2.SCS2AvatarSimulationFactory;
-import us.ihmc.avatar.testTools.ScriptedFootstepGenerator;
 import us.ihmc.commonWalkingControlModules.highLevelHumanoidControl.factories.ControllerAPIDefinition;
 import us.ihmc.communication.IHMCROS2Publisher;
 import us.ihmc.communication.ROS2Tools;
@@ -36,8 +35,6 @@ public class SCS2AvatarTestingSimulationFactory extends SCS2AvatarSimulationFact
 
    @SuppressWarnings("rawtypes")
    private final Map<Class<?>, IHMCROS2Publisher> defaultControllerPublishers = new HashMap<>();
-
-   private ScriptedFootstepGenerator scriptedFootstepGenerator;
 
    public static SCS2AvatarTestingSimulation createDefaultTestSimulation(DRCRobotModel robotModel, SimulationTestingParameters simulationTestingParameters)
    {
@@ -152,13 +149,6 @@ public class SCS2AvatarTestingSimulationFactory extends SCS2AvatarSimulationFact
    public void setRobotModel(DRCRobotModel robotModel)
    {
       super.setRobotModel(robotModel);
-   }
-
-   public ScriptedFootstepGenerator getScriptedFootstepGenerator()
-   {
-      if (scriptedFootstepGenerator == null)
-         scriptedFootstepGenerator = new ScriptedFootstepGenerator(robotModel.get().createFullRobotModel());
-      return scriptedFootstepGenerator;
    }
 
    public void setup(SimulationTestingParameters parameters)

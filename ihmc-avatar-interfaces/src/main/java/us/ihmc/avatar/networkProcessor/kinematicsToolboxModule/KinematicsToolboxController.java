@@ -91,6 +91,7 @@ import us.ihmc.robotics.screwTheory.SelectionMatrix6D;
 import us.ihmc.robotics.screwTheory.TotalMassCalculator;
 import us.ihmc.robotics.time.ThreadTimer;
 import us.ihmc.sensorProcessing.outputData.JointDesiredOutputList;
+import us.ihmc.yoVariables.euclid.referenceFrame.YoFrameConvexPolygon2D;
 import us.ihmc.yoVariables.euclid.referenceFrame.YoFramePoint3D;
 import us.ihmc.yoVariables.euclid.referenceFrame.YoFramePose3D;
 import us.ihmc.yoVariables.registry.YoRegistry;
@@ -164,7 +165,7 @@ public class KinematicsToolboxController extends ToolboxController
     * gathering the entire set of desired inputs and formulate the adequate optimization problem to be
     * solved for every control tick. The output of the controller core provides every tick a new robot
     * joint configurations and velocities that are one step closer to the desireds. The output is used
-    * to update the state of the {@link #desiredFullRobotModel} such that it progresses towards the
+    * to update the state of the {@link #oneDoFJoints} such that it progresses towards the
     * desired user inputs over time.
     */
    private final WholeBodyControllerCore controllerCore;
@@ -177,7 +178,7 @@ public class KinematicsToolboxController extends ToolboxController
 
    /**
     * This is the output of the {@code KinematicsToolboxController}. It is filled with the robot
-    * configuration obtained from {@link #desiredFullRobotModel} and also with the solution quality
+    * configuration obtained from {@link #oneDoFJoints} and also with the solution quality
     * which can be used to quickly see if the solution is viable. It is sent back to the caller only.
     */
    private final KinematicsToolboxOutputStatus inverseKinematicsSolution;
@@ -213,7 +214,7 @@ public class KinematicsToolboxController extends ToolboxController
     */
    private final YoDouble privilegedMaxVelocity = new YoDouble("privilegedMaxVelocity", registry);
    /**
-    * Defines a robot configuration the this IK start from and also defines the privileged joint
+    * Defines a robot configuration that this IK start from and also defines the privileged joint
     * configuration.
     */
    protected TObjectDoubleHashMap<OneDoFJointBasics> initialRobotConfigurationMap = null;
@@ -244,7 +245,7 @@ public class KinematicsToolboxController extends ToolboxController
 
    /**
     * Reference to the most recent robot configuration received from the controller. It is used for
-    * initializing the {@link #desiredFullRobotModel} before starting the optimization process.
+    * initializing the {@link #oneDoFJoints} before starting the optimization process.
     */
    private final ConcurrentCopier<RobotConfigurationData> concurrentRobotConfigurationDataCopier = new ConcurrentCopier<>(RobotConfigurationData::new);
    protected final RobotConfigurationData robotConfigurationDataInternal = new RobotConfigurationData();
@@ -455,7 +456,7 @@ public class KinematicsToolboxController extends ToolboxController
       }
 
       this.initialRobotConfigurationMap = new TObjectDoubleHashMap<>();
-      initialRobotConfigurationMap.entrySet().forEach(entry -> this.initialRobotConfigurationMap.put(entry.getKey(), entry.getValue()));
+      initialRobotConfigurationMap.forEach((key, value) -> this.initialRobotConfigurationMap.put(key, value));
    }
 
    /**
@@ -561,7 +562,7 @@ public class KinematicsToolboxController extends ToolboxController
     * Creating the controller core which is the main piece of this solver.
     * 
     * @param controllableRigidBodies
-    * @return the controller core that will run for the desired robot {@link #desiredFullRobotModel}.
+    * @return the controller core that will run for the desired robot model in {@link #oneDoFJoints}.
     */
    private WholeBodyControllerCore createControllerCore(Collection<? extends RigidBodyBasics> controllableRigidBodies)
    {
@@ -1288,7 +1289,7 @@ public class KinematicsToolboxController extends ToolboxController
 
    /**
     * Creates a {@code PrivilegedConfigurationCommand} to update the privileged joint angles to match
-    * the current state of {@link #desiredFullRobotModel}.
+    * the current state of {@link #oneDoFJoints}.
     */
    private void snapPrivilegedConfigurationToCurrent()
    {
